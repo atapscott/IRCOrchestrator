@@ -89,6 +89,8 @@ class BotOrchestrator:
     BOT_AMOUNT = 10
     BOT_PULSE_INTERVAL = [1, 2]
 
+    buffer_lock = threading.Lock()
+
     def __init__(self, channel, target_nickname, server, port=6667):
 
         self.active_bots = []
@@ -96,9 +98,6 @@ class BotOrchestrator:
         self.server = server
         self.port = port
         self.target_nickname = target_nickname
-
-        self.private_sentence_buffer = self.get_file_lines('privateSentenceList.txt')
-        self.public_sentence_buffer = self.get_file_lines('publicSentenceList.txt')
 
         self.initialize_bots()
         self.pulse_bots()
@@ -118,41 +117,40 @@ class BotOrchestrator:
             agent_bot = random.choice(self.active_bots)
 
             if random.randint(1, 3) > 1:
-                self.send_private_message(agent_bot)
+                self.send_message(agent_bot, 'privateSentenceList.txt', public=False)
             else:
-                self.send_public_message(agent_bot)
+                self.send_message(agent_bot, 'publicSentenceList.txt')
 
-    def send_private_message(self, agent_bot_sayer):
-        if len(self.private_sentence_buffer) == 0:
-            self.private_sentence_buffer = self.get_file_lines('privateSentenceList.txt')
+    def remove_file_sentence(self, file_url, sentence):
+        with open(file_url, "r") as f:
+            lines = f.readlines()
+        with open(file_url, "w") as f:
+            for line in lines:
+                if line.strip("\n") != sentence:
+                    f.write(line)
 
-        private_sentence = random.choice(self.private_sentence_buffer)
-        self.private_sentence_buffer.remove(private_sentence)
+    def send_message(self, agent_bot_sayer, sentence_file_url, public=True):
+        self.buffer_lock.acquire()
+        try:
+            sentences = self.get_file_lines(sentence_file_url)
+            if len(sentences) > 0:
+                sentence = random.choice(sentences)
+                if public:
+                    agent_bot_sayer.say_public(sentence)
+                else:
+                    agent_bot_sayer.say_private(self.target_nickname, sentence)
+                self.remove_file_sentence(sentence_file_url, sentence)
 
-        agent_bot_sayer.say_private(self.target_nickname, private_sentence)
-
-    def send_public_message(self, agent_bot_sayer):
-        if len(self.public_sentence_buffer) == 0:
-            self.public_sentence_buffer = self.get_file_lines('publicSentenceList.txt')
-
-        private_sentence = random.choice(self.public_sentence_buffer)
-        self.public_sentence_buffer.remove(private_sentence)
-
-        agent_bot_sayer.say_public(private_sentence)
+        finally:
+            self.buffer_lock.release()
 
     def get_names(self, amount):
         return random.sample(self.get_file_lines('botNameList.txt'), amount)
 
-    def get_private_sentences_buffer(self, amount):
-        return self.get_file_lines('privateSentenceList.txt')
-
     def get_file_lines(self, file_url):
-        try:
-            with open(file_url, 'r') as lines:
-                out_lines = [line.strip() for line in lines.readlines()]
-                return out_lines
-        except Exception as e:
-            return []
+        with open(file_url, 'r') as lines:
+            out_lines = [line.strip() for line in lines.readlines()]
+            return out_lines
 
 
 def main():
